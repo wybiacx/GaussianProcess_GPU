@@ -94,18 +94,43 @@ vector<double> cpu_gaussian_process_regression(const vector<vector<double>>& X_t
     // 计算训练数据的协方差矩阵
     vector<vector<double>> K = compute_covariance_matrix(X_train, length_scale);
 
+
+
     // 添加噪声项 sigma^2 * I
     for (size_t i = 0; i < n_train; ++i) {
         K[i][i] += sigma_n;
     }
+
+    // std::cout << "CPU K" << std::endl;
+    // for (size_t i = 0; i < n_train; ++i) {
+    //     for (size_t j = 0; j < n_train; ++j) {
+    //         std::cout << K[i][j] << " ";
+    //     }
+    //     std::cout << std::endl;
+    // }
 
     // 求逆 K^-1
     if (!inverse_matrix(K)) {
         throw runtime_error("Matrix is singular and cannot be inverted.");
     }
 
+    // std::cout << "CPU K Inv" << std::endl;
+    // for (size_t i = 0; i < n_train; ++i) {
+    //     for (size_t j = 0; j < n_train; ++j) {
+    //         std::cout << K[i][j] << " ";
+    //     }
+    //     std::cout << std::endl;
+    // }
+
     // 计算 K^-1 * y_train
     vector<double> alpha = mat_vec_multiply(K, y_train);
+
+    // std::cout << "CPU alpha" << std::endl;
+    // for (size_t i = 0; i < n_train; ++i) {
+    //     std::cout << alpha[i] << " ";
+    //
+    // }
+    // std::cout << std::endl;
 
     // 计算测试数据与训练数据之间的协方差矩阵 K_*
     vector<vector<double>> K_star(n_test, vector<double>(n_train, 0.0));
@@ -114,6 +139,14 @@ vector<double> cpu_gaussian_process_regression(const vector<vector<double>>& X_t
             K_star[i][j] = rbf_kernel(X_test[i], X_train[j], length_scale);
         }
     }
+
+    // std::cout << "CPU K star" << std::endl;
+    // for (size_t i = 0; i < n_test; ++i) {
+    //     for (size_t j = 0; j < n_train; ++j) {
+    //         std::cout << K_star[i][j] << " ";
+    //     }
+    //     std::cout << std::endl;
+    // }
 
     // 计算预测值 y_*
     vector<double> y_star(n_test, 0.0);
@@ -134,36 +167,36 @@ void test_cpu_GP() {
 
     srand(time(NULL));
 
-    int n = 100;
-    int input_dim = 1;
+    int n = 500;
+    int input_dim = 2;
 
     for (int i = 0; i < n; i++) {
         vector<double> input;
         double output = 0;
         for (int j = 0; j < input_dim; j++) {
-            double elem = i;
+            double elem = i + j;
             input.push_back(elem);
-            output += input[j] * input[j];
+            output += input[j];
         }
         X_train.push_back(input);
         y_train.push_back(output);
     }
 
     // 示例测试数据（多维输入）
-    vector<vector<double>> X_test = {{1.5}, {2.5}, {3.5}, {98.5}};  // 测试点
+    vector<vector<double>> X_test = {{1.5, 2.5}, {2.5, 3.5}, {3.5, 4.5}};  // 测试点
 
     vector<double> y_test;
     for (int i = 0; i < X_test.size(); i++) {
         double output = 0;
         for (int j = 0; j < input_dim; j++) {
-            double elem = X_test[i][j];
-            output += elem * elem;
+            // double elem = X_test[i][j];
+            output += X_test[i][j];
         }
         y_test.push_back(output);
     }
 
     double length_scale = 1.0;  // RBF核的长度尺度
-    double sigma_n = 1e-1;  // 噪声的标准差
+    double sigma_n = 1e-2;  // 噪声的标准差
 
     // 进行高斯过程回归预测
     try {

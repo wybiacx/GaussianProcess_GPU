@@ -16,8 +16,6 @@ link_directories("${CUDA_TOOLKIT_ROOT_DIR}/lib/x64")
 
 
 add_executable(GP_CUDA src/main.cpp
-        src/test_kernel.cu
-        src/test_kernel.cuh
         src/cpu_GP.cpp
         src/cpu_GP.h
         src/cu_GP.cu
