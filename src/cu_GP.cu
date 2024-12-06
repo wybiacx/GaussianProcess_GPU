@@ -284,6 +284,10 @@ vector<double> gpu_gaussian_process_regression(const vector<vector<double>> &X_t
     CHECK(cudaFree(d_y_star));
     CHECK(cudaFree(d_y_train));
     CHECK(cudaFree(d_K));
+    CHECK(cudaFree(d_K_backup));
+    CHECK(cudaFree(d_K_inv));
+    CHECK(cudaFreeHost(flattened_train));
+    CHECK(cudaFreeHost(flattened_test));
     cusolverDnDestroy(cusolver_handle);
 
     return y_start;
