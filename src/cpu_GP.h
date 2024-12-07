@@ -28,6 +28,6 @@ vector<double> cpu_gaussian_process_regression(const vector<vector<double>>& X_t
 
 // 测试
 
-void test_cpu_GP();
+void test_cpu_GP(int data_len);
 
 #endif //CPU_GP_H

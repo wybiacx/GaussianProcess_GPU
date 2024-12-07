@@ -144,12 +144,17 @@ vector<double> gpu_gaussian_process_regression(const vector<vector<double>> &X_t
         index++;
     }
 
-    double *d_X_train, *d_K, *d_y_train, *d_X_test;
+    vector<double> y_start(X_test_count, 0);
+    double *d_X_train, *d_K, *d_y_train, *d_X_test, *d_K_backup, *d_K_inv, *d_alpha, *d_K_star, *d_y_star;
     CHECK(cudaMalloc(reinterpret_cast<void **>(&d_X_train), sizeof(double) * X_train_count * element_len));
     CHECK(cudaMalloc(reinterpret_cast<void **>(&d_X_test), sizeof(double) * X_test_count * element_len));
     CHECK(cudaMalloc(reinterpret_cast<void **>(&d_K), sizeof(double) *  X_train_count * X_train_count * element_len));
+    CHECK(cudaMalloc((void**)&d_K_backup, sizeof(double) * X_train_count * X_train_count));
+    CHECK(cudaMalloc((void**)&d_K_inv, sizeof(double) * X_train_count * X_train_count));
     CHECK(cudaMalloc(reinterpret_cast<void **>(&d_y_train), sizeof(double) * X_train_count));
-
+    CHECK(cudaMalloc((void**)&d_K_star, X_train_count * X_test_count * sizeof(double)));
+    CHECK(cudaMalloc((void**)&d_alpha, X_train_count * sizeof(double)));
+    CHECK(cudaMalloc((void**)&d_y_star, X_test_count * sizeof(double)));
 
     CHECK(cudaMemcpy(d_y_train, y_train.data(), sizeof(double) * X_train_count, cudaMemcpyHostToDevice));
     CHECK(cudaMemcpy(d_X_train, flattened_train, sizeof(double) * X_train_count * element_len, cudaMemcpyHostToDevice));
@@ -157,7 +162,6 @@ vector<double> gpu_gaussian_process_regression(const vector<vector<double>> &X_t
 
     dim3 threadsPerBlock(32, 32);
     dim3 blocksPerGrid((X_train_count + threadsPerBlock.x - 1) / threadsPerBlock.x, (X_train_count + threadsPerBlock.y - 1) / threadsPerBlock.y);
-
 
     // 计算协方差矩阵 K
     // 协方差矩阵加噪声 sigma ^ 2 * I
@@ -168,8 +172,7 @@ vector<double> gpu_gaussian_process_regression(const vector<vector<double>> &X_t
     );
 
     cudaDeviceSynchronize();
-    // std::cout << "GPU K" << std::endl;
-    // printDeviceArrayToHostMatrix(d_K, X_train_count * X_train_count, X_train_count, X_train_count);
+
     // --------------------------------------------------------------------------------------------
     // 计算协方差矩阵的逆 K^-1
 
@@ -184,13 +187,9 @@ vector<double> gpu_gaussian_process_regression(const vector<vector<double>> &X_t
     CHECK(cudaMalloc((void**)&d_pivot, X_train_count * sizeof(int)));
     CHECK(cudaMalloc((void**)&d_info, sizeof(int)));
 
-    double* d_K_backup;
-    CHECK(cudaMalloc((void**)&d_K_backup, sizeof(double) * X_train_count * X_train_count));
     CHECK(cudaMemcpy(d_K_backup, d_K, sizeof(double) * X_train_count * X_train_count, cudaMemcpyDeviceToDevice));
 
     // 初始化单位矩阵
-    double* d_K_inv;
-    CHECK(cudaMalloc((void**)&d_K_inv, sizeof(double) * X_train_count * X_train_count));
     initialize_identity_matrix<<<blocksPerGrid, threadsPerBlock>>>(d_K_inv, X_train_count);
     cudaDeviceSynchronize();
 
@@ -219,16 +218,8 @@ vector<double> gpu_gaussian_process_regression(const vector<vector<double>> &X_t
     }
     //---------------------------------------------------------------------------------------
 
-    // std::cout << "GPU K Inv" << std::endl;
-    // printDeviceArrayToHostMatrix(d_K_inv, X_train_count * X_train_count, X_train_count, X_train_count);
-
-
-
-
     // 计算协方差矩阵与y_train的相乘
     // K^-1 * y_train -> alpha
-    double *d_alpha;
-    CHECK(cudaMalloc((void**)&d_alpha, X_train_count * sizeof(double)));
 
     dim3 threadPerBlock2(32);
     dim3 blockPerGrid2((X_train_count + threadPerBlock2.x - 1) / threadPerBlock2.x);
@@ -237,31 +228,15 @@ vector<double> gpu_gaussian_process_regression(const vector<vector<double>> &X_t
     mat_vec_multiply_cuda<<<blockPerGrid2, threadPerBlock2>>>(d_K_inv, d_y_train, X_train_count, X_train_count, d_alpha);
     cudaDeviceSynchronize();
 
-    // std::cout << "GPU alpha" << std::endl;
-    // printDeviceArrayToHostMatrix(d_alpha, X_train_count, 1, X_train_count);
-
-    // printDeviceArrayToHost(d_alpha, X_train_count);
-
     // 计算X_test与X_train之间的协方差矩阵K_*
-    double *d_K_star;
-
-    CHECK(cudaMalloc((void**)&d_K_star, X_train_count * X_test_count * sizeof(double)));
 
     dim3 threadPerBlock3(32, 32);
     dim3 blockPerGrid3((X_test_count + threadPerBlock3.x - 1) / threadPerBlock3.x, (X_train_count + threadPerBlock3.y - 1) / threadPerBlock3.y);
-
     // [m, n]
     compute_covariance_matrix_cuda<<<blockPerGrid3, threadPerBlock3>>>(d_X_test, d_X_train, d_K_star,
         X_test_count, X_train_count, element_len, length_scale);
 
     cudaDeviceSynchronize();
-
-    // std::cout << "GPU K star" << std::endl;
-    // printDeviceArrayToHostMatrix(d_K_star, X_test_count * X_train_count, X_test_count, X_train_count);
-
-    double *d_y_star;
-    vector<double> y_start(X_test_count, 0);
-    CHECK(cudaMalloc((void**)&d_y_star, X_test_count * sizeof(double)));
 
 
     // 计算预测值 y_*
@@ -294,16 +269,16 @@ vector<double> gpu_gaussian_process_regression(const vector<vector<double>> &X_t
 
 }
 
-
-void test_gpu_GP() {
+void warmup_gpu_GP() {
+    int data_len = 100;
     // 示例训练数据（多维输入）
     vector<vector<double>> X_train ;  // 训练点
     vector<double> y_train;  // 对应的输出
 
     srand(time(NULL));
 
-    int n = 500;
-    int input_dim = 2;
+    int n = data_len;
+    int input_dim = 10;
 
     for (int i = 0; i < n; i++) {
         vector<double> input;
@@ -318,17 +293,23 @@ void test_gpu_GP() {
     }
 
     // 示例测试数据（多维输入）
-    vector<vector<double>> X_test = {{1.5, 2.5}, {2.5, 3.5}, {3.5, 4.5}};  // 测试点
-
+    vector<vector<double>> X_test;  // 测试点
     vector<double> y_test;
-    for (int i = 0; i < X_test.size(); i++) {
+
+    int test_len = 10;
+    for (int i = 0; i < test_len; i++) {
+        vector<double> input;
         double output = 0;
         for (int j = 0; j < input_dim; j++) {
-            // double elem = X_test[i][j];
-            output += X_test[i][j];
+            double elem = i + j + 0.5;
+            input.push_back(elem);
+            output += input[j];
         }
+        X_test.push_back(input);
         y_test.push_back(output);
     }
+
+
 
     double length_scale = 1.0;  // RBF核的长度尺度
     double sigma_n = 1e-2;  // 噪声的标准差
@@ -338,16 +319,83 @@ void test_gpu_GP() {
         vector<double> y_star = gpu_gaussian_process_regression(X_train, y_train, X_test, length_scale, sigma_n);
 
         // 输出预测结果
-        cout << "Predicted values: " << endl;
-        for (double val : y_star) {
-            cout << val << endl;
-        }
+        // cout << "Predicted values: " << endl;
+        // for (double val : y_star) {
+        //     cout << val << endl;
+        // }
 
-        double error = 0;
-        for (int i = 0; i < X_test.size(); ++i) {
-            error += fabs(y_test[i] - y_star[i]);
+        // double error = 0;
+        // for (int i = 0; i < X_test.size(); ++i) {
+        //     error += fabs(y_test[i] - y_star[i]);
+        // }
+        // cout << "Total Error: " << error << endl;
+        cout << "GPU WarmUp Successes. Using Device 0." << endl;
+
+    } catch (const exception& e) {
+        cerr << "Warm up GPU Error: " << e.what() << endl;
+    }
+}
+
+
+void test_gpu_GP(int data_len) {
+    // 示例训练数据（多维输入）
+    vector<vector<double>> X_train ;  // 训练点
+    vector<double> y_train;  // 对应的输出
+
+    srand(time(NULL));
+
+    int n = data_len;
+    int input_dim = 10;
+
+    for (int i = 0; i < n; i++) {
+        vector<double> input;
+        double output = 0;
+        for (int j = 0; j < input_dim; j++) {
+            double elem = i + j;
+            input.push_back(elem);
+            output += input[j];
         }
-        cout << "Total Error: " << error << endl;
+        X_train.push_back(input);
+        y_train.push_back(output);
+    }
+
+    // 示例测试数据（多维输入）
+    vector<vector<double>> X_test;  // 测试点
+    vector<double> y_test;
+
+    int test_len = 10;
+    for (int i = 0; i < test_len; i++) {
+        vector<double> input;
+        double output = 0;
+        for (int j = 0; j < input_dim; j++) {
+            double elem = i + j + 0.5;
+            input.push_back(elem);
+            output += input[j];
+        }
+        X_test.push_back(input);
+        y_test.push_back(output);
+    }
+
+
+
+    double length_scale = 1.0;  // RBF核的长度尺度
+    double sigma_n = 1e-2;  // 噪声的标准差
+
+    // 进行高斯过程回归预测
+    try {
+        vector<double> y_star = gpu_gaussian_process_regression(X_train, y_train, X_test, length_scale, sigma_n);
+
+        // 输出预测结果
+        // cout << "Predicted values: " << endl;
+        // for (double val : y_star) {
+        //     cout << val << endl;
+        // }
+
+        // double error = 0;
+        // for (int i = 0; i < X_test.size(); ++i) {
+        //     error += fabs(y_test[i] - y_star[i]);
+        // }
+        // cout << "Total Error: " << error << endl;
     } catch (const exception& e) {
         cerr << "Error: " << e.what() << endl;
     }

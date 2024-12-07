@@ -160,15 +160,15 @@ vector<double> cpu_gaussian_process_regression(const vector<vector<double>>& X_t
 }
 
 
-void test_cpu_GP() {
+void test_cpu_GP(int data_len) {
     // 示例训练数据（多维输入）
     vector<vector<double>> X_train ;  // 训练点
     vector<double> y_train;  // 对应的输出
 
     srand(time(NULL));
 
-    int n = 500;
-    int input_dim = 2;
+    int n = data_len;
+    int input_dim = 10;
 
     for (int i = 0; i < n; i++) {
         vector<double> input;
@@ -183,15 +183,19 @@ void test_cpu_GP() {
     }
 
     // 示例测试数据（多维输入）
-    vector<vector<double>> X_test = {{1.5, 2.5}, {2.5, 3.5}, {3.5, 4.5}};  // 测试点
-
+    vector<vector<double>> X_test;  // 测试点
     vector<double> y_test;
-    for (int i = 0; i < X_test.size(); i++) {
+
+    int test_len = 10;
+    for (int i = 0; i < test_len; i++) {
+        vector<double> input;
         double output = 0;
         for (int j = 0; j < input_dim; j++) {
-            // double elem = X_test[i][j];
-            output += X_test[i][j];
+            double elem = i + j + 0.5;
+            input.push_back(elem);
+            output += input[j];
         }
+        X_test.push_back(input);
         y_test.push_back(output);
     }
 
@@ -203,16 +207,16 @@ void test_cpu_GP() {
         vector<double> y_star = cpu_gaussian_process_regression(X_train, y_train, X_test, length_scale, sigma_n);
 
         // 输出预测结果
-        cout << "Predicted values: " << endl;
-        for (double val : y_star) {
-            cout << val << endl;
-        }
+        // cout << "Predicted values: " << endl;
+        // for (double val : y_star) {
+        //     cout << val << endl;
+        // }
 
-        double error = 0;
-        for (int i = 0; i < X_test.size(); ++i) {
-            error += fabs(y_test[i] - y_star[i]);
-        }
-        cout << "Total Error: " << error << endl;
+        // double error = 0;
+        // for (int i = 0; i < X_test.size(); ++i) {
+        //     error += fabs(y_test[i] - y_star[i]);
+        // }
+        // cout << "Total Error: " << error << endl;
     } catch (const exception& e) {
         cerr << "Error: " << e.what() << endl;
     }

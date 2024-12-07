@@ -26,6 +26,8 @@ __global__ void initialize_identity_matrix(double* I, int n);
 vector<double> gpu_gaussian_process_regression(const vector<vector<double>>& X_train, const vector<double>& y_train,
                                            const vector<vector<double>>& X_test, double length_scale, double sigma_n);
 
-void test_gpu_GP();
+void test_gpu_GP(int data_len);
+
+void warmup_gpu_GP();
 
 #endif //CU_GP_CUH
