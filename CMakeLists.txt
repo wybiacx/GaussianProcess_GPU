@@ -8,9 +8,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -std=c++14")
 
 # 设置 CUDA Toolkit 的路径（根据实际安装路径调整）
-set(CUDA_TOOLKIT_ROOT_DIR "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.6")
+
+if(WIN32)
+        set(CUDA_TOOLKIT_ROOT_DIR "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.6")
+        set(PATH_SEPARATOR ";")
+else()
+        set(CUDA_TOOLKIT_ROOT_DIR "/usr/local/cuda-12.4")
+        set(PATH_SEPARATOR ":")
+endif()
+
 include_directories("${CUDA_TOOLKIT_ROOT_DIR}/include")
-link_directories("${CUDA_TOOLKIT_ROOT_DIR}/lib/x64")
+link_directories("${CUDA_TOOLKIT_ROOT_DIR}/lib/x64" "${CUDA_TOOLKIT_ROOT_DIR}/lib64")
 
 # 根据编译器设置 Release 优化选项
 if(MSVC)
@@ -43,3 +51,9 @@ target_link_libraries(GP_CUDA
         cublas
         cudart
 )
+
+# 在 Linux 上显示 CUDA Toolkit 路径和库信息
+if(UNIX)
+    message(STATUS "CUDA Toolkit Path: ${CUDA_TOOLKIT_ROOT_DIR}")
+    message(STATUS "CUDA Libraries: ${CUDA_TOOLKIT_ROOT_DIR}/lib64")
+endif()
